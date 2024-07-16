@@ -1,0 +1,185 @@
+---
+title: Jetblue has the Greatest Odds of Having its Departing Flights from Sacramento
+  International Being Delayed
+author: "Jessica Cerda"
+date: "2023-05-06"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+#### Abstract
+
+After running tests and interpretations on [Flight Delay Data](https://transtats.bts.gov/DL_SelectFields.aspx?gnoyr_VQ=FGJ&QO_fu146_anzr=b0-gvzr) from the Beauru of Transportation, it was discovered that JetBlue and Southwest airlines have the greatest odds of being delayed. Those who fly Skywest and Delta airlines face the lowest odds of being delayed.
+
+
+#### Data
+
+
+```{r Data}
+require(dplyr)
+require(ggplot2)
+
+#Flight data during april of 2019
+precovidflights = read.csv("/Users/jessicacerda/Desktop/196L Project 2 Actual/Pre Covid Flight Data.csv")
+
+#flight data During April of 2020
+covidflights = read.csv("/Users/jessicacerda/Desktop/196L Project 2 Actual/Covid Flight Data.csv")
+
+#flight data during april of 2022
+postcovidflights = read.csv("/Users/jessicacerda/Desktop/196L Project 2 Actual/Post Covid Flight Data.csv")
+
+#Combining postcovid and covid flight data 
+flights = rbind(covidflights,postcovidflights,precovidflights)
+
+#data of the carriers
+carriers = read.csv("/Users/jessicacerda/Desktop/196L Project 2 Lab/L_UNIQUE_CARRIERS.csv")
+
+colnames(carriers) = c("OP_UNIQUE_CARRIER", "airline")
+
+#Merging the data from carriers and flights 
+flights3 = merge(flights,carriers)
+
+#Filtering to only show the flights from Sacramento international 
+SMFflights = flights3 %>% filter(ORIGIN == "SMF")
+
+#Removing flights with missing values
+SMFflights = na.omit(SMFflights)
+ 
+
+
+#Code to implement test train split
+set.seed(27)
+n = nrow(SMFflights)
+train_index= sample.int(n, size = 0.6*n)
+
+train = SMFflights[train_index,]
+test = SMFflights[-train_index,]
+
+#Model to predict the odds of having a 15 minute delay
+delaymod <- glm(DEP_DEL15 ~ YEAR+airline, data = train, family = binomial)
+
+predprob = predict(delaymod, type = "response")
+
+
+```
+
+
+### Model Description
+
+This model analyzes the data set *SMFflights* and explores the probability a flight is delayed 15 minutes or longer when departing from Sacramento International. 
+
+Each row in the column set represents a different departing flight from Sacramento International Airport. The data set includes 9862 observations of 7 different variables
+
+For this data analysis we will focus on the following
+
+- `DEP_DEL15` Whether or not a flight was departing over 15 minutes flight
+- `YEAR` The year each flight departed from Sacramento International Airport
+- `Airlines` A categorical variable with containing each airline that 
+
+Using knitr, here is a table of the first few rows within the dataset
+```{r}
+head(train)
+```
+
+
+
+Included below is a visual representation of the logistic regression model used for the exploratory data analysis
+
+$$
+y = \beta_0+ \beta_{1year} x_{i1} +\beta_{American Airlines} x_{i2} + \beta_{3Southwest} x_{i3}+...+\beta_{9United Airlines} x_{i9}
+$$
+
+
+### Coefficient Interpretation
+
+The coeffients within the model *delaymod* made the following conclusions. The following few increased the odds your flight was delayed 15 minutes or longer before the flight departs:
+
+- `YEAR` increased odds by .28697 for each year added on
+- `American Airlines` increases odds by .42433
+- `Frontier Airlines` increases odds by .16199
+- `Hawaiian Airlines` increases odds by .44993
+- `Horizon Air` increases odds by .04421
+- `JetBlue Airways` increases odds by .93049
+- `Southwest Airlines` increases odds by .59748
+- `Spirit Airlines` increases odds by .38376
+- `United Airlines` increases odds by .25076
+
+The following coefficients decreases odds that flights are delayed 15 minutes or longer before the flight departs:
+
+- `Delta Air Lines` decreases odds by .15863
+- `Mesa Airlines` decreases odds by 9.86362
+- `SkyWest Airlines` decreases odds by .45159
+
+
+#### Odds Confidence Interval
+```{r}
+ci <- confint(delaymod)
+p <- exp(ci)/ (1+ exp(ci))
+p
+
+
+```
+
+
+
+### Residuals
+```{r}
+
+qqnorm(residuals(delaymod))
+
+library(dplyr)
+library(ggplot2)
+require(ggplot2)
+train.m = na.omit(train)
+train.m = mutate(train.m, predprob = predict(delaymod, type = "response"))
+h = hist(predict(delaymod), plot = FALSE)
+linpred = predict(delaymod)
+gdf = group_by(train.m, cut(linpred, breaks = h$breaks))
+hldf  = summarise(gdf, y= sum(DEP_DEL15), ppred = mean(predprob), count =n())
+hldf = mutate(hldf, se.fit = sqrt(ppred*(1-ppred)/count))
+ggplot(hldf,aes(x = ppred, y = y/count,ymin = y/count - 2*se.fit, ymax = y/count+2*se.fit) )+geom_point()+geom_linerange(color = grey(0.75))+geom_abline(intercept = 0, slope. = 1 )+xlab("predicted probability")+ylab("observed proportion")
+```
+
+Looking at the binned resiudal plot there does not appear to be many points veering of from the model indicating that the model is a good fitting for predicting the odds of flights departing from Sacramento International Airport being delayed 15 minutes or more 
+
+### Model Evaluation
+```{r}
+exp(ci["YEAR",]*2)
+```
+Based on the confidence interval above, with 95% confidence, adding flying in 2024 increases the odds of having a flight delay from 60% to 97%
+
+
+### Hypothesis Testing
+
+```{r}
+
+```
+
+
+### ROC Curve
+```{r}
+library(ROCR)
+testdmod = glm(DEP_DEL15~YEAR+airline, test, family = binomial)
+test$predprob = predict(testdmod, type = "response")
+pred <- prediction(test$predprob, test$DEP_DEL15)
+perf<- performance (pred, "tpr","fpr")
+
+test$random = runif(nrow(test))
+
+pred2 <- prediction(test$random, test$DEP_DEL15)
+perf2 <- performance(pred2, "tpr","fpr")
+
+plot(perf)
+plot(perf2, col = "purple", add = TRUE)
+```
+
+The Receiver Operating Characteristics (ROC) views performance for all possible cut off values. Based on the ROC curve, there is no specific cut off value that would make the model work better for predictions. This is normal given that it is very difficult to predict delays in flights or else flights would be on a different time schedule.
+
+#### Conclusion
+
+Based on the findings above, it was found that when flying with Jetblue in recent, passengers had the greatest chance of experiencing a delay fifteen minutes or longer whereas passengers on Delta airlines had the lowest odds of experiencing a fifteen minute or longer delay. It was also found that as years go on there is more odds for a delay occurring, but this can be attributed to the global pandemic and flights being cancelled/delayed for a period of time. With the return back to normalcy, many airlines have a lack of crew members leading to these delays. The main fix to these issues is to hire more people to lower delays.
